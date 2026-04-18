@@ -80,12 +80,31 @@ ensure_aliases() {
     done
 }
 
+ensure_tmux_conf() {
+    conf="$HOME/.tmux.conf"
+    if [ -f "$conf" ] && grep -q 'mux tmux binding' "$conf"; then
+        info "tmux.conf: already configured"
+    else
+        {
+            printf '\n# >>> mux tmux binding >>>\n'
+            printf '# Detach from any app (Claude, Codex, vim, ...) with a single key.\n'
+            printf 'bind-key -n F12 detach-client\n'
+            printf '# <<< mux tmux binding <<<\n'
+        } >> "$conf"
+        info "tmux.conf: added F12 detach binding to $conf"
+    fi
+    if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+        tmux source-file "$conf" >/dev/null 2>&1 && info "tmux: reloaded running server"
+    fi
+}
+
 main() {
     ensure_pkg tmux
     ensure_pkg fzf
     install_binary
     ensure_path
     ensure_aliases
+    ensure_tmux_conf
     info "done. open a new shell (or: source your rc) and run:  mux --help"
 }
 

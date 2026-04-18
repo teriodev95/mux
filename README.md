@@ -31,6 +31,12 @@ bye            # detaches; session keeps running
 mux            # pick it back up later
 ```
 
+### Detaching from inside apps
+
+`bye` is a shell alias — it won't fire while a full-screen program (Claude, Codex, vim, htop, …) owns your terminal. The installer binds **`F12`** in tmux to detach instantly from anywhere, even inside those apps. Your session keeps running in the background; pick it back up with `mux`.
+
+If `F12` collides with something you use, edit `~/.tmux.conf` — the binding sits in a `# >>> mux tmux binding <<<` block.
+
 ## Requirements
 
 `tmux` and `fzf`. The installer gets them via `brew`, `apt`, `dnf`, `pacman`, or `apk`.
