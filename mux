@@ -26,8 +26,25 @@ list_sessions() {
     tmux list-sessions -F '#{session_name}' 2>/dev/null || true
 }
 
+validate_name() {
+    case "$1" in
+        *:*|*.*|*' '*|*"	"*)
+            echo "mux: invalid name \"$1\" (no :, ., or whitespace)" >&2
+            exit 1
+            ;;
+    esac
+}
+
 attach_or_create() {
     name=$1
+    validate_name "$name"
+    if [ -n "${TMUX:-}" ]; then
+        current=$(tmux display-message -p '#S' 2>/dev/null || echo '')
+        if [ "$name" = "$current" ]; then
+            echo "mux: already attached to \"$name\""
+            return 0
+        fi
+    fi
     if tmux has-session -t "$name" 2>/dev/null; then
         if [ -n "${TMUX:-}" ]; then
             tmux switch-client -t "$name"
@@ -52,17 +69,25 @@ cmd_pick() {
         return
     fi
 
-    result=$(printf '%s\n' "$sessions" | fzf \
+    _MUX_SELF=$(tmux display-message -p '#S' 2>/dev/null || echo '')
+    export _MUX_SELF
+
+    lines=$(tmux list-sessions -F '#{session_name}	#{?session_attached,● ,  }#{session_name}' 2>/dev/null || true)
+
+    result=$(printf '%s\n' "$lines" | fzf \
         --prompt='session> ' \
         --header='Enter: attach · type + Enter on no match: new · Ctrl-C: cancel' \
         --height=40% \
         --reverse \
         --print-query \
-        --preview='tmux capture-pane -ep -t {}' \
+        --delimiter="	" \
+        --with-nth=2.. \
+        --preview='if [ "{1}" = "${_MUX_SELF:-}" ]; then echo "(you are here — attaching is a no-op)"; else tmux capture-pane -ep -t {1}; fi' \
         --preview-window=right:60%) || true
 
     query=$(printf '%s\n' "$result"  | sed -n '1p')
-    match=$(printf '%s\n' "$result"  | sed -n '2p')
+    match_line=$(printf '%s\n' "$result"  | sed -n '2p')
+    match=$(printf '%s' "$match_line" | cut -f1)
 
     if [ -n "$match" ]; then
         attach_or_create "$match"
@@ -74,6 +99,14 @@ cmd_pick() {
 cmd_kill() {
     sessions=$(list_sessions)
     [ -z "$sessions" ] && { echo "no sessions"; return; }
+    if [ -n "${TMUX:-}" ]; then
+        current=$(tmux display-message -p '#S' 2>/dev/null || echo '')
+        sessions=$(printf '%s\n' "$sessions" | grep -Fvx -- "$current" || true)
+        if [ -z "$sessions" ]; then
+            echo "mux: only the current session exists — run \`bye\` to detach first"
+            return 0
+        fi
+    fi
     picked=$(printf '%s\n' "$sessions" | fzf \
         --prompt='kill> ' \
         --header='Tab: multi-select · Enter: confirm' \
@@ -95,6 +128,7 @@ cmd_new() {
         read -r name
     fi
     [ -z "$name" ] && { echo "mux: name required" >&2; exit 1; }
+    validate_name "$name"
     attach_or_create "$name"
 }
 
