@@ -1,0 +1,115 @@
+#!/bin/sh
+# mux — intuitive tmux session picker.
+# Does one thing: pick/create/kill sessions via fzf. Nothing else.
+
+set -eu
+
+usage() {
+    cat <<'EOF'
+mux — tmux session picker
+
+Usage:
+  mux                pick a session (type to filter, Enter on query = new)
+  mux ls             list sessions
+  mux new [name]     create/attach session
+  mux detach         detach current session (alias: bye, bg) — keeps it alive
+  mux kill           pick sessions to kill (Tab to multi-select)
+  mux -h | --help    show this help
+EOF
+}
+
+require() {
+    command -v "$1" >/dev/null 2>&1 || { echo "mux: $1 not found" >&2; exit 1; }
+}
+
+list_sessions() {
+    tmux list-sessions -F '#{session_name}' 2>/dev/null || true
+}
+
+attach_or_create() {
+    name=$1
+    if tmux has-session -t "$name" 2>/dev/null; then
+        if [ -n "${TMUX:-}" ]; then
+            tmux switch-client -t "$name"
+        else
+            tmux attach-session -t "$name"
+        fi
+    else
+        if [ -n "${TMUX:-}" ]; then
+            tmux new-session -ds "$name" && tmux switch-client -t "$name"
+        else
+            tmux new-session -s "$name"
+        fi
+    fi
+}
+
+cmd_pick() {
+    sessions=$(list_sessions)
+    if [ -z "$sessions" ]; then
+        printf 'no sessions — name for new one [main]: '
+        read -r name
+        attach_or_create "${name:-main}"
+        return
+    fi
+
+    result=$(printf '%s\n' "$sessions" | fzf \
+        --prompt='session> ' \
+        --header='Enter: attach · type + Enter on no match: new · Ctrl-C: cancel' \
+        --height=40% \
+        --reverse \
+        --print-query \
+        --preview='tmux capture-pane -ep -t {}' \
+        --preview-window=right:60%) || true
+
+    query=$(printf '%s\n' "$result"  | sed -n '1p')
+    match=$(printf '%s\n' "$result"  | sed -n '2p')
+
+    if [ -n "$match" ]; then
+        attach_or_create "$match"
+    elif [ -n "$query" ]; then
+        attach_or_create "$query"
+    fi
+}
+
+cmd_kill() {
+    sessions=$(list_sessions)
+    [ -z "$sessions" ] && { echo "no sessions"; return; }
+    picked=$(printf '%s\n' "$sessions" | fzf \
+        --prompt='kill> ' \
+        --header='Tab: multi-select · Enter: confirm' \
+        --multi --height=40% --reverse) || return 0
+    printf '%s\n' "$picked" | while IFS= read -r s; do
+        [ -n "$s" ] && tmux kill-session -t "$s" && echo "killed: $s"
+    done
+}
+
+cmd_detach() {
+    [ -n "${TMUX:-}" ] || { echo "mux: not inside a tmux session" >&2; exit 1; }
+    tmux detach-client
+}
+
+cmd_new() {
+    name=${1:-}
+    if [ -z "$name" ]; then
+        printf 'name: '
+        read -r name
+    fi
+    [ -z "$name" ] && { echo "mux: name required" >&2; exit 1; }
+    attach_or_create "$name"
+}
+
+main() {
+    require tmux
+    require fzf
+    case "${1:-pick}" in
+        pick|'')            cmd_pick ;;
+        ls|list)            list_sessions ;;
+        new|create)         shift; cmd_new "$@" ;;
+        detach|bye|bg)      cmd_detach ;;
+        kill|rm)            cmd_kill ;;
+        -h|--help|help)     usage ;;
+        *)                  echo "mux: unknown command: $1" >&2; usage; exit 1 ;;
+    esac
+}
+
+main "$@"
