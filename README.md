@@ -16,8 +16,8 @@ Works on macOS and Linux. The installer drops `mux` into `~/.local/bin`, ensures
 
 ```
 mux                pick a session (type + Enter on no match = new)
+mux a <name>       attach to session (creates if missing)
 mux ls             list sessions
-mux new <name>     create/attach a session
 mux detach         detach current session (alias: bye) — keeps it alive
 mux kill           pick sessions to kill
 ```
@@ -29,6 +29,12 @@ mux            # picker; type "api" + Enter → creates & attaches
 # …work…
 bye            # detaches; session keeps running
 mux            # pick it back up later
+```
+
+When you detach, mux prints the exact command to resume, Codex-style:
+
+```
+↩ detached from "api" · resume with:  mux a api   (or just:  mux)
 ```
 
 ### Detaching from inside apps

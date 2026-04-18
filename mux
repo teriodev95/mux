@@ -10,8 +10,8 @@ mux — tmux session picker
 
 Usage:
   mux                pick a session (type to filter, Enter on query = new)
+  mux a <name>       attach to session (creates if missing); also: mux new <name>
   mux ls             list sessions
-  mux new [name]     create/attach session
   mux detach         detach current session (alias: bye, bg) — keeps it alive
   mux kill           pick sessions to kill (Tab to multi-select)
   mux -h | --help    show this help
@@ -44,20 +44,16 @@ attach_or_create() {
             echo "mux: already attached to \"$name\""
             return 0
         fi
-    fi
-    if tmux has-session -t "$name" 2>/dev/null; then
-        if [ -n "${TMUX:-}" ]; then
+        if tmux has-session -t "$name" 2>/dev/null; then
             tmux switch-client -t "$name"
         else
-            tmux attach-session -t "$name"
-        fi
-    else
-        if [ -n "${TMUX:-}" ]; then
             tmux new-session -ds "$name" && tmux switch-client -t "$name"
-        else
-            tmux new-session -s "$name"
         fi
+        return 0
     fi
+    tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name"
+    tmux attach-session -t "$name"
+    printf '\n↩ detached from "%s" · resume with:  mux a %s   (or just:  mux)\n\n' "$name" "$name"
 }
 
 cmd_pick() {
@@ -138,7 +134,7 @@ main() {
     case "${1:-pick}" in
         pick|'')            cmd_pick ;;
         ls|list)            list_sessions ;;
-        new|create)         shift; cmd_new "$@" ;;
+        new|create|a|attach) shift; cmd_new "$@" ;;
         detach|bye|bg)      cmd_detach ;;
         kill|rm)            cmd_kill ;;
         -h|--help|help)     usage ;;
