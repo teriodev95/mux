@@ -1,11 +1,8 @@
 # mux
 
-An intuitive tmux session picker. A ~75‑line POSIX shell script wrapping `fzf` — nothing more.
+An intuitive tmux session picker — ~150 lines of POSIX shell wrapping `fzf`.
 
-- Pick, create, kill, detach tmux sessions with fuzzy search
-- Live preview of each session (what's actually running in it)
-- One binary, one file, no runtime, no plugins
-- Works on macOS and Linux (bash or zsh)
+Pick, create, detach, and kill tmux sessions with fuzzy search and a live preview of what's running in each one.
 
 ## Install
 
@@ -13,63 +10,30 @@ An intuitive tmux session picker. A ~75‑line POSIX shell script wrapping `fzf`
 curl -fsSL https://raw.githubusercontent.com/teriodev95/mux/main/install.sh | sh
 ```
 
-The installer is idempotent and will:
-
-1. Install `tmux` and `fzf` if missing (via `brew`, `apt`, `dnf`, `pacman`, or `apk`)
-2. Drop `mux` in `~/.local/bin/mux`
-3. Add `~/.local/bin` to your `PATH` if needed
-4. Register `bye` and `det` aliases for quick detach
-
-Every change to your rc files is wrapped in `# >>> mux ... <<<` markers, so removal is trivial.
-
-### From a clone
-
-```sh
-git clone https://github.com/teriodev95/mux.git
-cd mux
-./install.sh
-```
-
-Then reload your shell: `source ~/.zshrc` or `source ~/.bashrc`.
+Works on macOS and Linux. The installer drops `mux` into `~/.local/bin`, ensures it's on your `PATH`, and adds a `bye` alias for quick detach. All changes to rc files are wrapped in `# >>> mux ... <<<` markers.
 
 ## Usage
 
 ```
-mux                pick a session (type to filter, Enter on query = create new)
+mux                pick a session (type + Enter on no match = new)
 mux ls             list sessions
-mux new [name]     create/attach a session
-mux detach         detach current session (aliases: bye, det) — keeps it alive
-mux kill           pick sessions to kill (Tab to multi-select)
-mux -h | --help    show help
+mux new <name>     create/attach a session
+mux detach         detach current session (alias: bye) — keeps it alive
+mux kill           pick sessions to kill
 ```
 
-### Typical flow
+Typical flow:
 
 ```sh
-mux              # opens picker; type "api" + Enter → creates & attaches "api"
+mux            # picker; type "api" + Enter → creates & attaches
 # …work…
-bye              # detaches; session keeps running in background
-mux              # pick it back up later
-mux kill         # tidy up when you're done
+bye            # detaches; session keeps running
+mux            # pick it back up later
 ```
 
 ## Requirements
 
-- `tmux` >= 2.1
-- `fzf` (any recent version)
-- POSIX `sh`
-
-That's it. No Node, Python, Go, Rust, Homebrew tap, or `~/.config/mux/`.
-
-## Deploy to remote servers
-
-A companion `deploy.sh` is included for installing to SSH hosts:
-
-```sh
-./deploy.sh myserver1 myserver2
-```
-
-It `scp`'s the script plus installer and runs it remotely. Hosts must be reachable via `ssh <host>` (i.e., already configured in `~/.ssh/config`).
+`tmux` and `fzf`. The installer gets them via `brew`, `apt`, `dnf`, `pacman`, or `apk`.
 
 ## Uninstall
 
@@ -77,16 +41,7 @@ It `scp`'s the script plus installer and runs it remotely. Hosts must be reachab
 rm ~/.local/bin/mux
 ```
 
-Then delete the `# >>> mux ... <<<` blocks from `~/.zshrc` / `~/.bashrc`.
-
-## Design
-
-Two rules:
-
-1. **Do one thing.** `mux` picks/creates/kills tmux sessions. It does not theme, configure, wrap, or replace tmux.
-2. **Don't reinvent what exists.** `fzf` does fuzzy selection beautifully; `tmux` has a rich CLI. `mux` is glue.
-
-Less than 100 lines of shell. Read it before running it.
+Then remove the `# >>> mux ... <<<` blocks from `~/.zshrc` / `~/.bashrc`.
 
 ## License
 
