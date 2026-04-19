@@ -63,7 +63,10 @@ attach_or_create() {
         return 0
     fi
     tmux has-session -t "$name" 2>/dev/null || tmux new-session -ds "$name"
+    trap 'stty sane 2>/dev/null || true' EXIT INT TERM HUP
     tmux attach-session -t "$name"
+    stty sane 2>/dev/null || true
+    trap - EXIT INT TERM HUP
     printf '\n↩ detached from "%s" · resume with:  mux a %s   (or just:  mux)\n\n' "$name" "$name"
 }
 
