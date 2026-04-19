@@ -9,30 +9,42 @@ usage() {
 mux — tmux session picker
 
 Usage:
-  mux                pick a session (type to filter, Enter on query = new)
-  mux a <name>       attach to session (creates if missing); also: mux new <name>
-  mux ls             list sessions
-  mux detach         detach current session (alias: bye, bg) — keeps it alive
-  mux kill           pick sessions to kill (Tab to multi-select)
-  mux -h | --help    show this help
+  mux                          pick a session (type to filter, Enter on query = new)
+  mux a <name> [--no-attach]   attach (creates if missing); alias: mux new
+  mux ls [--json]              list sessions (optionally as JSON)
+  mux has <name>               exit 0 if session exists, else 1
+  mux run <name> [--] <cmd…>   spawn detached session (-f/--force replaces)
+  mux peek <name> [-n LINES]   capture pane output without attaching
+  mux detach                   detach current session (alias: bye, bg)
+  mux kill                     pick sessions to kill (Tab to multi-select)
+  mux -h | --help              show this help
 EOF
 }
 
-require() {
-    command -v "$1" >/dev/null 2>&1 || { echo "mux: $1 not found" >&2; exit 1; }
-}
-
-list_sessions() {
-    tmux list-sessions -F '#{session_name}' 2>/dev/null || true
-}
+require() { command -v "$1" >/dev/null 2>&1 || { echo "mux: $1 not found" >&2; exit 1; }; }
+list_sessions() { tmux list-sessions -F '#{session_name}' 2>/dev/null || true; }
 
 validate_name() {
-    case "$1" in
-        *:*|*.*|*' '*|*"	"*)
-            echo "mux: invalid name \"$1\" (no :, ., or whitespace)" >&2
-            exit 1
-            ;;
+    case "$1" in ''|*:*|*.*|*' '*|*"	"*)
+        echo "mux: invalid name \"$1\" (no :, ., or whitespace)" >&2; exit 1 ;;
     esac
+}
+
+json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+layout_vars() {
+    cols=$(tput cols 2>/dev/null || echo 100)
+    rows=$(tput lines 2>/dev/null || echo 30)
+    if   [ "$cols" -ge 100 ]; then preview_win='right:60%'
+    elif [ "$cols" -ge 70  ]; then preview_win='up:50%'
+    else                           preview_win='hidden'
+    fi
+    [ "$rows" -lt 15 ] && height='100%' || height='40%'
+    if [ "$cols" -lt 70 ]; then
+        pick_header='Enter: attach · Ctrl-C: cancel'
+    else
+        pick_header='Enter: attach · type + Enter on no match: new · Ctrl-C: cancel'
+    fi
 }
 
 attach_or_create() {
@@ -41,8 +53,7 @@ attach_or_create() {
     if [ -n "${TMUX:-}" ]; then
         current=$(tmux display-message -p '#S' 2>/dev/null || echo '')
         if [ "$name" = "$current" ]; then
-            echo "mux: already attached to \"$name\""
-            return 0
+            echo "mux: already attached to \"$name\""; return 0
         fi
         if tmux has-session -t "$name" 2>/dev/null; then
             tmux switch-client -t "$name"
@@ -56,89 +67,156 @@ attach_or_create() {
     printf '\n↩ detached from "%s" · resume with:  mux a %s   (or just:  mux)\n\n' "$name" "$name"
 }
 
+ensure_session() {
+    validate_name "$1"
+    tmux has-session -t "$1" 2>/dev/null || tmux new-session -ds "$1"
+}
+
 cmd_pick() {
     sessions=$(list_sessions)
+    layout_vars
     if [ -z "$sessions" ]; then
+        [ -t 0 ] || { echo "mux: no sessions and no TTY for prompt" >&2; exit 1; }
         printf 'no sessions — name for new one [main]: '
         read -r name
         attach_or_create "${name:-main}"
         return
     fi
-
+    [ -t 0 ] || { echo "mux: no TTY for interactive picker" >&2; exit 1; }
     _MUX_SELF=$(tmux display-message -p '#S' 2>/dev/null || echo '')
     export _MUX_SELF
-
     lines=$(tmux list-sessions -F '#{session_name}	#{?session_attached,● ,  }#{session_name}' 2>/dev/null || true)
-
     result=$(printf '%s\n' "$lines" | fzf \
-        --prompt='session> ' \
-        --header='Enter: attach · type + Enter on no match: new · Ctrl-C: cancel' \
-        --height=40% \
-        --reverse \
-        --print-query \
-        --delimiter="	" \
-        --with-nth=2.. \
+        --prompt='session> ' --header="$pick_header" \
+        --height="$height" --reverse --print-query \
+        --delimiter="	" --with-nth=2.. \
         --preview='if [ "{1}" = "${_MUX_SELF:-}" ]; then echo "(you are here — attaching is a no-op)"; else tmux capture-pane -ep -t {1}; fi' \
-        --preview-window=right:60%) || true
-
-    query=$(printf '%s\n' "$result"  | sed -n '1p')
-    match_line=$(printf '%s\n' "$result"  | sed -n '2p')
-    match=$(printf '%s' "$match_line" | cut -f1)
-
-    if [ -n "$match" ]; then
-        attach_or_create "$match"
-    elif [ -n "$query" ]; then
-        attach_or_create "$query"
+        --preview-window="$preview_win") || true
+    query=$(printf '%s\n' "$result" | sed -n '1p')
+    match=$(printf '%s\n' "$result" | sed -n '2p' | cut -f1)
+    if   [ -n "$match" ]; then attach_or_create "$match"
+    elif [ -n "$query" ]; then attach_or_create "$query"
     fi
 }
 
 cmd_kill() {
     sessions=$(list_sessions)
     [ -z "$sessions" ] && { echo "no sessions"; return; }
+    layout_vars
     if [ -n "${TMUX:-}" ]; then
         current=$(tmux display-message -p '#S' 2>/dev/null || echo '')
         sessions=$(printf '%s\n' "$sessions" | grep -Fvx -- "$current" || true)
-        if [ -z "$sessions" ]; then
-            echo "mux: only the current session exists — run \`bye\` to detach first"
-            return 0
-        fi
+        [ -z "$sessions" ] && { echo "mux: only the current session exists — run \`bye\` to detach first"; return 0; }
     fi
     picked=$(printf '%s\n' "$sessions" | fzf \
-        --prompt='kill> ' \
-        --header='Tab: multi-select · Enter: confirm' \
-        --multi --height=40% --reverse) || return 0
+        --prompt='kill> ' --header='Tab: multi-select · Enter: confirm' \
+        --multi --height="$height" --reverse) || return 0
     printf '%s\n' "$picked" | while IFS= read -r s; do
         [ -n "$s" ] && tmux kill-session -t "$s" && echo "killed: $s"
     done
 }
 
-cmd_detach() {
-    [ -n "${TMUX:-}" ] || { echo "mux: not inside a tmux session" >&2; exit 1; }
-    tmux detach-client
-}
+cmd_detach() { [ -n "${TMUX:-}" ] || { echo "mux: not inside a tmux session" >&2; exit 1; }; tmux detach-client; }
 
 cmd_new() {
-    name=${1:-}
+    no_attach=0; name=''
+    for a in "$@"; do
+        case "$a" in
+            --no-attach) no_attach=1 ;;
+            *) [ -z "$name" ] && name=$a ;;
+        esac
+    done
     if [ -z "$name" ]; then
-        printf 'name: '
-        read -r name
+        [ -t 0 ] || { echo "mux: no name and no TTY for prompt" >&2; exit 1; }
+        printf 'name: '; read -r name
     fi
     [ -z "$name" ] && { echo "mux: name required" >&2; exit 1; }
     validate_name "$name"
+    [ "$no_attach" -eq 1 ] && { ensure_session "$name"; return 0; }
     attach_or_create "$name"
+}
+
+cmd_ls() {
+    if [ "${1:-}" = "--json" ]; then
+        first=1
+        printf '['
+        tmux list-sessions -F '#{session_name}:#{session_attached}:#{session_windows}:#{session_created}' 2>/dev/null | \
+        while IFS=':' read -r n att win cre; do
+            [ -z "$n" ] && continue
+            [ "$first" -eq 0 ] && printf ','
+            first=0
+            [ "${att:-0}" != "0" ] && ab=true || ab=false
+            printf '{"name":"%s","attached":%s,"windows":%s,"created":%s}' \
+                "$(json_escape "$n")" "$ab" "${win:-0}" "${cre:-0}"
+        done
+        printf ']\n'
+    else
+        list_sessions
+    fi
+}
+
+cmd_has() {
+    name=${1:-}; [ -z "$name" ] && exit 1
+    case "$name" in *:*|*.*|*' '*|*"	"*) exit 1 ;; esac
+    tmux has-session -t "$name" 2>/dev/null
+}
+
+cmd_run() {
+    force=0; name=''
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -f|--force) force=1; shift ;;
+            --) shift; break ;;
+            -*) echo "mux: unknown flag: $1" >&2; exit 1 ;;
+            *)  [ -z "$name" ] && { name=$1; shift; } || break ;;
+        esac
+    done
+    [ -z "$name" ] && { echo "mux: run requires a name" >&2; exit 1; }
+    validate_name "$name"
+    [ $# -eq 0 ] && { echo "mux: run requires a command" >&2; exit 1; }
+    if tmux has-session -t "$name" 2>/dev/null; then
+        [ "$force" -eq 1 ] && tmux kill-session -t "$name" 2>/dev/null || \
+            { echo "mux: session \"$name\" already exists" >&2; exit 1; }
+    fi
+    tmux new-session -d -s "$name" "$@"
+}
+
+cmd_peek() {
+    name=''; lines=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -n)  [ $# -lt 2 ] && { echo "mux: -n requires a value" >&2; exit 1; }
+                 lines=$2; shift 2 ;;
+            -n*) lines=${1#-n}; shift ;;
+            *)   [ -z "$name" ] && name=$1; shift ;;
+        esac
+    done
+    [ -z "$name" ] && { echo "mux: peek requires a name" >&2; exit 1; }
+    case "$lines" in
+        ''|*[!0-9]*) echo "mux: -n requires a non-negative integer" >&2; exit 1 ;;
+    esac
+    validate_name "$name"
+    tmux has-session -t "$name" 2>/dev/null || { echo "mux: no session \"$name\"" >&2; exit 1; }
+    if [ "$lines" -gt 0 ]; then
+        tmux capture-pane -ep -S -"$lines" -t "$name"
+    else
+        tmux capture-pane -ep -t "$name"
+    fi
 }
 
 main() {
     require tmux
-    require fzf
     case "${1:-pick}" in
-        pick|'')            cmd_pick ;;
-        ls|list)            list_sessions ;;
+        pick|'')             require fzf; cmd_pick ;;
+        ls|list)             shift; cmd_ls "$@" ;;
+        has)                 shift; cmd_has "$@" ;;
+        run)                 shift; cmd_run "$@" ;;
+        peek)                shift; cmd_peek "$@" ;;
         new|create|a|attach) shift; cmd_new "$@" ;;
-        detach|bye|bg)      cmd_detach ;;
-        kill|rm)            cmd_kill ;;
-        -h|--help|help)     usage ;;
-        *)                  echo "mux: unknown command: $1" >&2; usage; exit 1 ;;
+        detach|bye|bg)       cmd_detach ;;
+        kill|rm)             require fzf; cmd_kill ;;
+        -h|--help|help)      usage ;;
+        *)                   echo "mux: unknown command: $1" >&2; usage; exit 1 ;;
     esac
 }
 

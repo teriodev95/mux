@@ -43,6 +43,21 @@ When you detach, mux prints the exact command to resume, Codex-style:
 
 If `F12` collides with something you use, edit `~/.tmux.conf` — the binding sits in a `# >>> mux tmux binding <<<` block.
 
+## For AI agents
+
+`mux` exposes a small, non-interactive, machine-readable surface so agents can drive tmux without a TTY or a picker.
+
+```sh
+mux ls --json                              # inspect state (JSON array)
+mux has build && echo "running"            # predicate — exit 0/1, silent
+mux run build -- npm run build             # spawn background task (detached)
+mux run build --force -- npm run build     # replace an existing session
+mux peek build -n 100                      # observe output + 100 lines scrollback
+mux a scratch --no-attach                  # ensure session exists, do not attach
+```
+
+Note: `mux` and `mux a <name>` (without `--no-attach`) attach interactively — agents without a TTY should use `--no-attach` or `mux run` instead.
+
 ## Requirements
 
 `tmux` and `fzf`. The installer gets them via `brew`, `apt`, `dnf`, `pacman`, or `apk`.
