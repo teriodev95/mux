@@ -45,7 +45,7 @@ If `F12` collides with something you use, edit `~/.tmux.conf` — the binding si
 
 ## For AI agents
 
-`mux` exposes a small, non-interactive, machine-readable surface so agents can drive tmux without a TTY or a picker.
+`mux` exposes a small, non-interactive, machine-readable surface so agents (Claude, Codex, scripts, CI) can drive tmux without a TTY or a picker. Sessions act like background processes with persistence, isolation, and the ability for a human to re-attach later.
 
 ```sh
 mux ls --json                              # inspect state (JSON array)
@@ -56,7 +56,36 @@ mux peek build -n 100                      # observe output + 100 lines scrollba
 mux a scratch --no-attach                  # ensure session exists, do not attach
 ```
 
-Note: `mux` and `mux a <name>` (without `--no-attach`) attach interactively — agents without a TTY should use `--no-attach` or `mux run` instead.
+### What each command does
+
+**`mux ls --json`** — Emits every session as a JSON array. Fields: `name`, `attached` (bool), `windows` (int), `created` (unix timestamp). Plain `mux ls` stays one-name-per-line for humans; the flag opts into structured output.
+
+```json
+[{"name":"api","attached":true,"windows":3,"created":1713470400}]
+```
+
+**`mux has <name>`** — Silent predicate. Exit 0 if the session exists, exit 1 otherwise. Use in conditionals: `if mux has deploy; then …`. No output, no color, no noise.
+
+**`mux run <name> [--] <cmd…>`** — Creates a detached session running `<cmd…>`. The `--` separator is optional but recommended when the command has flags of its own. Fails with exit 1 if a session with that name already exists (won't clobber your running work).
+
+**`mux run <name> --force [--] <cmd…>`** — Same as above but kills any existing session with that name first. Useful for restarting a stale build without a manual `kill` step.
+
+**`mux peek <name> [-n LINES]`** — Captures the visible pane of a session without attaching. With `-n N`, includes N lines of scrollback history. An agent can poll `mux peek build -n 100` to observe progress without interrupting the work or needing a TTY. Exits 1 if the session doesn't exist.
+
+**`mux a <name> --no-attach`** — Ensures the session exists (creating it detached if missing) but never attaches. Without `--no-attach`, `mux a` calls `tmux attach-session`, which requires a TTY and will hang for an agent. Use this flag to pre-create empty sessions, or combine with `mux run` in setup scripts.
+
+### Typical agent flow
+
+```sh
+mux has deploy || mux run deploy -- ./deploy.sh prod   # spawn only if not running
+sleep 30
+mux peek deploy -n 200                                 # check progress
+mux ls --json | jq '.[] | select(.name=="deploy")'     # inspect structured state
+```
+
+When you (the human) are ready to inspect live, run `mux a deploy` from your terminal and you land right in the session.
+
+Note: `mux` (picker) and `mux a <name>` (without `--no-attach`) are interactive and require a TTY — agents should use `--no-attach` or `mux run` instead.
 
 ## Requirements
 
