@@ -1,6 +1,6 @@
 # mux
 
-An intuitive tmux session picker — ~150 lines of POSIX shell wrapping `fzf`.
+An intuitive tmux session picker — a small POSIX shell wrapper around `tmux` and `fzf`.
 
 Pick, create, detach, and kill tmux sessions with fuzzy search and a live preview of what's running in each one.
 
@@ -89,7 +89,7 @@ Note: `mux` (picker) and `mux a <name>` (without `--no-attach`) are interactive 
 
 ## Requirements
 
-`tmux` and `fzf`. The installer gets them via `brew`, `apt`, `dnf`, `pacman`, or `apk`.
+`tmux` for session control, plus `fzf` for the interactive picker and killer. The installer gets them via `brew`, `apt`, `dnf`, `pacman`, or `apk`.
 
 ## Uninstall
 

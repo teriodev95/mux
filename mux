@@ -13,7 +13,8 @@ Usage:
   mux a <name> [--no-attach]   attach (creates if missing); alias: mux new
   mux ls [--json]              list sessions (optionally as JSON)
   mux has <name>               exit 0 if session exists, else 1
-  mux run <name> [--] <cmd…>   spawn detached session (-f/--force replaces)
+  mux run <name> [-f|--force] [--] <cmd…>
+                               spawn detached session (force replaces)
   mux peek <name> [-n LINES]   capture pane output without attaching
   mux detach                   detach current session (alias: bye, bg)
   mux kill                     pick sessions to kill (Tab to multi-select)
@@ -124,12 +125,21 @@ cmd_detach() { [ -n "${TMUX:-}" ] || { echo "mux: not inside a tmux session" >&2
 
 cmd_new() {
     no_attach=0; name=''
-    for a in "$@"; do
-        case "$a" in
+    while [ $# -gt 0 ]; do
+        case "$1" in
             --no-attach) no_attach=1 ;;
-            *) [ -z "$name" ] && name=$a ;;
+            --) shift; break ;;
+            -*) echo "mux: unknown flag: $1" >&2; exit 1 ;;
+            *)  [ -z "$name" ] || { echo "mux: unexpected argument: $1" >&2; exit 1; }
+                name=$1 ;;
         esac
+        shift
     done
+    if [ $# -gt 0 ]; then
+        [ -z "$name" ] || { echo "mux: unexpected argument: $1" >&2; exit 1; }
+        [ $# -eq 1 ] || { echo "mux: too many arguments" >&2; exit 1; }
+        name=$1
+    fi
     if [ -z "$name" ]; then
         [ -t 0 ] || { echo "mux: no name and no TTY for prompt" >&2; exit 1; }
         printf 'name: '; read -r name
@@ -192,9 +202,17 @@ cmd_peek() {
             -n)  [ $# -lt 2 ] && { echo "mux: -n requires a value" >&2; exit 1; }
                  lines=$2; shift 2 ;;
             -n*) lines=${1#-n}; shift ;;
-            *)   [ -z "$name" ] && name=$1; shift ;;
+            --)  shift; break ;;
+            -*)  echo "mux: unknown flag: $1" >&2; exit 1 ;;
+            *)   [ -z "$name" ] || { echo "mux: unexpected argument: $1" >&2; exit 1; }
+                 name=$1; shift ;;
         esac
     done
+    if [ $# -gt 0 ]; then
+        [ -z "$name" ] || { echo "mux: unexpected argument: $1" >&2; exit 1; }
+        [ $# -eq 1 ] || { echo "mux: too many arguments" >&2; exit 1; }
+        name=$1
+    fi
     [ -z "$name" ] && { echo "mux: peek requires a name" >&2; exit 1; }
     case "$lines" in
         ''|*[!0-9]*) echo "mux: -n requires a non-negative integer" >&2; exit 1 ;;
@@ -209,6 +227,9 @@ cmd_peek() {
 }
 
 main() {
+    case "${1:-pick}" in
+        -h|--help|help) usage; exit 0 ;;
+    esac
     require tmux
     case "${1:-pick}" in
         pick|'')             require fzf; cmd_pick ;;
@@ -219,7 +240,6 @@ main() {
         new|create|a|attach) shift; cmd_new "$@" ;;
         detach|bye|bg)       cmd_detach ;;
         kill|rm)             require fzf; cmd_kill ;;
-        -h|--help|help)      usage ;;
         *)                   echo "mux: unknown command: $1" >&2; usage; exit 1 ;;
     esac
 }
